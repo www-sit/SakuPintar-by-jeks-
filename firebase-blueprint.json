@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User specific data and family mapping",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "familyId": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "member"] }
+      },
+      "required": ["uid", "name", "familyId"]
+    },
+    "Family": {
+      "title": "Family Account",
+      "description": "Group for collective finances",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name"]
+    },
+    "Transaction": {
+      "title": "Transaction Record",
+      "description": "An income or expense entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "category": { "type": "string" },
+        "userName": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "amount", "type", "category", "userId", "date"]
+    },
+    "Budget": {
+      "title": "Budget Plan",
+      "description": "Spending limit per category",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "limit": { "type": "number" },
+        "spent": { "type": "number" }
+      },
+      "required": ["category", "limit"]
+    }
+  },
+  "firestore": {
+    "/families/{familyId}": {
+      "schema": "Family",
+      "description": "Family root document"
+    },
+    "/families/{familyId}/members/{userId}": {
+      "schema": "User",
+      "description": "Members belonging to the family"
+    },
+    "/families/{familyId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Family transactions"
+    },
+    "/families/{familyId}/budgets/{categoryId}": {
+      "schema": "Budget",
+      "description": "Family budget settings"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Public user lookup and private profile"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Personal transactions"
+    },
+    "/users/{userId}/budgets/{categoryId}": {
+      "schema": "Budget",
+      "description": "Personal budget settings"
+    }
+  }
+}

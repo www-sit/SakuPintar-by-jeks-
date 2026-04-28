@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\- &\\.\\(\\),]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Role Checks
+    function isFamilyMember(familyId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+
+    function isFamilyAdmin(familyId) {
+      return isSignedIn() && get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // --- Collection: Families ---
+    match /families/{familyId} {
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(familyId) && isValidFamily(incoming());
+      allow update: if isSignedIn() && isFamilyAdmin(familyId) && isValidFamily(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['name'])
+      );
+
+      function isValidFamily(data) {
+        return data.keys().hasAll(['id', 'name']) && 
+               data.keys().size() >= 2 &&
+               data.id is string && data.id.size() <= 64 &&
+               data.name is string && data.name.size() <= 64;
+      }
+
+      // --- Collection: Members ---
+      match /members/{userId} {
+        allow read: if isSignedIn() && isFamilyMember(familyId);
+        allow create: if isSignedIn() && isValidId(userId) && isValidMember(incoming()) && (
+          // Allow first member (creator) to be admin
+          (!exists(/databases/$(database)/documents/families/$(familyId)) || isFamilyAdmin(familyId) || request.auth.uid == userId)
+        );
+        allow delete: if isSignedIn() && isFamilyAdmin(familyId) && userId != request.auth.uid;
+
+        function isValidMember(data) {
+          return data.keys().hasAll(['uid', 'name', 'familyId', 'role']) &&
+                 data.keys().size() == 4 &&
+                 data.uid == request.auth.uid && // Self-registration guard
+                 data.role in ['admin', 'member'];
+        }
+      }
+
+      // --- Collection: Transactions ---
+      match /transactions/{transactionId} {
+        allow read, list: if isSignedIn() && isFamilyMember(familyId);
+        allow create: if isSignedIn() && isFamilyMember(familyId) && isValidTransaction(incoming());
+        allow update: if isSignedIn() && isFamilyMember(familyId) && isValidTransaction(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'amount', 'category', 'type', 'date', 'scope'])
+        );
+        allow delete: if isSignedIn() && isFamilyMember(familyId);
+
+        function isValidTransaction(data) {
+          return data.keys().hasAll(['id', 'title', 'amount', 'type', 'category', 'userId', 'userName', 'date', 'scope']) &&
+                 data.keys().size() == 9 &&
+                 data.amount is number && data.amount > 0 &&
+                 data.type in ['income', 'expense'] &&
+                 data.scope in ['personal', 'family'] &&
+                 data.userId == request.auth.uid &&
+                 data.title.size() <= 100;
+        }
+      }
+
+      // --- Collection: Budgets ---
+      match /budgets/{categoryId} {
+        allow read, list: if isSignedIn() && isFamilyMember(familyId);
+        allow create: if isSignedIn() && isValidId(categoryId) && isFamilyMember(familyId) && isValidBudget(incoming());
+        allow update: if isSignedIn() && isValidId(categoryId) && (
+          isFamilyAdmin(familyId) && isValidBudget(incoming()) ||
+          isFamilyMember(familyId) && isValidBudget(incoming()) && (
+            // Non-admins can only update 'spent' field
+            incoming().diff(existing()).affectedKeys().hasOnly(['spent'])
+          )
+        );
+        allow delete: if isSignedIn() && isFamilyAdmin(familyId);
+
+        function isValidBudget(data) {
+          return data.keys().hasAll(['category', 'limit', 'spent']) &&
+                 data.keys().size() == 3 &&
+                 data.limit is number && data.limit >= 0 &&
+                 data.spent is number &&
+                 data.category is string;
+        }
+      }
+    }
+
+    // --- Collection: Users (Private profiles) ---
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+
+      match /transactions/{transactionId} {
+        allow read, list: if isSignedIn() && request.auth.uid == userId;
+        allow create, update: if isSignedIn() && request.auth.uid == userId && isValidTransaction(incoming());
+        allow delete: if isSignedIn() && request.auth.uid == userId;
+
+        function isValidTransaction(data) {
+          return data.keys().hasAll(['id', 'title', 'amount', 'type', 'category', 'userId', 'userName', 'date', 'scope']) &&
+                 data.keys().size() == 9 &&
+                 data.amount is number && data.amount > 0 &&
+                 data.type in ['income', 'expense'] &&
+                 data.scope == 'personal' &&
+                 data.userId == request.auth.uid &&
+                 data.title.size() <= 100;
+        }
+      }
+
+      match /budgets/{categoryId} {
+        allow read, list: if isSignedIn() && request.auth.uid == userId;
+        allow create, update: if isSignedIn() && isValidId(categoryId) && request.auth.uid == userId && isValidBudget(incoming());
+        allow delete: if isSignedIn() && isValidId(categoryId) && request.auth.uid == userId;
+
+        function isValidBudget(data) {
+          return data.keys().hasAll(['category', 'limit', 'spent']) &&
+                 data.keys().size() == 3 &&
+                 data.limit is number && data.limit >= 0 &&
+                 data.spent is number &&
+                 data.category is string;
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "SakuPintar - Keuangan Cerdas",
+  "description": "Aplikasi manajemen keuangan pribadi yang cerdas dengan fitur pelacakan pengeluaran, anggaran, dan analisis pengeluaran dalam Bahasa Indonesia.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
